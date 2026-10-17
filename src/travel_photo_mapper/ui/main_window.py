@@ -3,26 +3,33 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PyQt6.QtCore import QSettings, Qt, QThread, QThreadPool, QSize, QTimer, pyqtSignal
-from PyQt6.QtGui import QCloseEvent, QIcon, QKeyEvent, QPixmap
+from PyQt6.QtCore import QSettings, Qt, QThread, QThreadPool, QSize, QTimer, QUrl, pyqtSignal
+from PyQt6.QtGui import QCloseEvent, QDesktopServices, QIcon, QKeyEvent, QPixmap
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QFileDialog, QHBoxLayout, QVBoxLayout, QPushButton,
     QLabel, QListWidget, QListWidgetItem, QSplitter, QLineEdit, QFrame,
     QProgressBar, QMessageBox, QScrollArea, QGridLayout, QComboBox, QCheckBox,
-    QListView, QAbstractItemView, QStyle
+    QListView, QAbstractItemView, QStyle, QInputDialog, QMenu, QToolButton,
+    QDialog, QProgressDialog,
 )
 
-from app_info import APP_NAME, APP_VERSION
-from i18n import LANGUAGES, detect_system_language, get_language, set_language, tr, trn
-from models.photo import PhotoInfo
-from services.photo_scanner import PhotoScannerWorker
-from services.thumbnail_service import load_pixmap
-from services.thumbnail_worker import ThumbnailWorker
-from services.trip_service import build_stages, TripStage
-from services.export_service import export_geojson, export_gpx
-from ui.map_widget import MapWidget
-from ui.photo_viewer import PhotoViewer
-from ui.timeline_widget import TimelineWidget
+from travel_photo_mapper.app_info import APP_NAME, APP_VERSION
+from travel_photo_mapper.i18n import LANGUAGES, detect_system_language, get_language, set_language, tr, trn
+from travel_photo_mapper.models.photo import PhotoInfo
+from travel_photo_mapper.services.photo_scanner import PhotoScannerWorker
+from travel_photo_mapper.services.thumbnail_service import load_pixmap
+from travel_photo_mapper.services.thumbnail_worker import ThumbnailWorker
+from travel_photo_mapper.services.trip_service import build_stages, TripStage
+from travel_photo_mapper.services.export_service import export_geojson, export_gpx
+from travel_photo_mapper.services.saved_trip_service import SavedTrip, SavedTripService
+from travel_photo_mapper.services.html_album_service import AlbumExportWorker, available_album_folder
+from travel_photo_mapper.services.update_service import UpdateChecker, UpdateResult
+from travel_photo_mapper.ui.saved_trips_dialog import SavedTripsDialog
+from travel_photo_mapper.ui.album_export_dialog import AlbumExportDialog
+from travel_photo_mapper.ui.map_widget import MapWidget
+from travel_photo_mapper.ui.photo_viewer import PhotoViewer
+from travel_photo_mapper.ui.timeline_widget import TimelineWidget
+from travel_photo_mapper.ui.update_toast import UpdateToast
 
 
 STYLE = """
@@ -32,13 +39,13 @@ QMainWindow, QWidget {
 QFrame#topBar, QFrame#panel {
     background:#ffffff; border:1px solid #dce2e3; border-radius:6px;
 }
-QPushButton, QComboBox {
+QPushButton, QComboBox, QToolButton {
     min-height:30px; background:#ffffff; border:1px solid #cfd7d9;
     border-radius:5px; padding:3px 9px;
 }
-QPushButton:hover, QComboBox:hover { border-color:#0b8790; background:#f7fbfb; }
+QPushButton:hover, QComboBox:hover, QToolButton:hover { border-color:#0b8790; background:#f7fbfb; }
 QPushButton:pressed { background:#e8f4f4; }
-QPushButton:disabled, QComboBox:disabled { color:#9aa4a6; background:#f3f5f5; }
+QPushButton:disabled, QComboBox:disabled, QToolButton:disabled { color:#9aa4a6; background:#f3f5f5; }
 QPushButton#openButton {
     background:#ffc928; border-color:#e3ac00; color:#202124; font-weight:700;
 }
@@ -110,6 +117,20 @@ class MainWindow(QMainWindow):
         self._preview_source = QPixmap()
         self._suppress_map_focus = False
         self._counter_state: tuple[str, dict] = ("status", {"key": "counter.empty"})
+        self.trip_service = SavedTripService()
+        self._current_folder: Path | None = None
+        self._active_trip: SavedTrip | None = None
+        self._pending_trip: SavedTrip | None = None
+        self._album_thread: QThread | None = None
+        self._album_worker: AlbumExportWorker | None = None
+        self._album_progress: QProgressDialog | None = None
+        self._close_after_export = False
+        self.update_checker = UpdateChecker(self)
+        self.update_checker.finished.connect(self._on_update_result)
+        self._startup_update_scheduled = False
+        self._startup_update_timer = QTimer(self)
+        self._startup_update_timer.setSingleShot(True)
+        self._startup_update_timer.timeout.connect(self.check_for_updates)
 
         self.play_timer = QTimer(self)
         self.play_timer.setInterval(2000)
@@ -121,6 +142,8 @@ class MainWindow(QMainWindow):
         self.filter_timer.timeout.connect(self.apply_filter)
 
         self._build_ui()
+        self.update_toast = UpdateToast(self.centralWidget())
+        self.update_toast.release_requested.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
         self.setStyleSheet(STYLE)
         self._restore_settings()
 
@@ -139,6 +162,13 @@ class MainWindow(QMainWindow):
         self.open_btn = QPushButton(tr("toolbar.open_folder")); self.open_btn.setObjectName("openButton")
         self.open_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
         self.open_btn.clicked.connect(self.choose_folder)
+        self.trips_btn = QToolButton()
+        self.trips_btn.setText(tr("trips.menu"))
+        self.trips_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        trips_menu = QMenu(self.trips_btn)
+        self.save_trip_action = trips_menu.addAction(tr("trips.save"), self.save_trip_clicked)
+        self.saved_trips_action = trips_menu.addAction(tr("trips.title"), self.open_saved_trips)
+        self.trips_btn.setMenu(trips_menu)
         self.cancel_btn = QPushButton(tr("toolbar.cancel"))
         self.cancel_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCancelButton))
         self.cancel_btn.setVisible(False)
@@ -160,16 +190,20 @@ class MainWindow(QMainWindow):
         self.export_geojson_btn.clicked.connect(self.export_geojson_clicked)
         self.export_gpx_btn = QPushButton("GPX")
         self.export_gpx_btn.clicked.connect(self.export_gpx_clicked)
+        self.export_album_btn = QPushButton(tr("album.button"))
+        self.export_album_btn.clicked.connect(self.export_album_clicked)
 
         tb.addWidget(brand_icon)
         tb.addWidget(self.brand_title)
         tb.addSpacing(5)
         tb.addWidget(self.open_btn)
+        tb.addWidget(self.trips_btn)
         tb.addWidget(self.cancel_btn)
         tb.addWidget(self.path_edit, 1)
         tb.addWidget(self.counter)
         tb.addWidget(self.export_geojson_btn)
         tb.addWidget(self.export_gpx_btn)
+        tb.addWidget(self.export_album_btn)
         tb.addWidget(self.language_combo)
         outer.addWidget(toolbar)
 
@@ -347,7 +381,15 @@ class MainWindow(QMainWindow):
         if folder:
             self.load_folder(Path(folder))
 
-    def load_folder(self, folder: Path):
+    def load_folder(self, folder: Path, trip: SavedTrip | None = None):
+        if self._thread is not None:
+            return
+        if not self._save_active_trip():
+            return
+        self._active_trip = None
+        self._pending_trip = trip
+        self._current_folder = folder.resolve()
+        self._update_trip_title()
         if self._photo_viewer is not None:
             self._photo_viewer.close()
         self.play_timer.stop(); self._set_playback_icon(False)
@@ -358,24 +400,28 @@ class MainWindow(QMainWindow):
         self._thumbnail_generation += 1
         self._items_by_index.clear()
         self._reset_filters()
+        self.search_edit.clear()
         self.map_widget.set_photos([], [])
         self.timeline.set_photos([], [])
         self._clear_details()
         self._set_counter_status("counter.scanning")
         self.progress.setVisible(True); self.progress.setRange(0, 0)
         self.open_btn.setEnabled(False)
+        self.trips_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True); self.cancel_btn.setVisible(True)
         self._set_photo_controls_enabled(False)
 
         thread = QThread(self)
-        worker = PhotoScannerWorker(folder)
+        worker = PhotoScannerWorker(self._current_folder)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.progress.connect(self.on_scan_progress)
         worker.finished.connect(self.on_scan_finished)
         worker.failed.connect(self.on_scan_failed)
         worker.cancelled.connect(self.on_scan_cancelled)
-        worker.finished.connect(thread.quit); worker.failed.connect(thread.quit); worker.cancelled.connect(thread.quit)
+        worker.finished.connect(thread.quit, Qt.ConnectionType.DirectConnection)
+        worker.failed.connect(thread.quit, Qt.ConnectionType.DirectConnection)
+        worker.cancelled.connect(thread.quit, Qt.ConnectionType.DirectConnection)
         worker.finished.connect(worker.deleteLater); worker.failed.connect(worker.deleteLater); worker.cancelled.connect(worker.deleteLater)
         thread.finished.connect(self._on_thread_finished)
         thread.finished.connect(thread.deleteLater)
@@ -395,7 +441,7 @@ class MainWindow(QMainWindow):
             self._set_counter_status("counter.cancelling")
             self._worker.request_cancel()
 
-    def on_scan_progress(self, current: int, total: int, from_cache: bool):
+    def on_scan_progress(self, current: int, total: int, _photo: PhotoInfo, from_cache: bool):
         if self.progress.maximum() != total:
             self.progress.setRange(0, max(total, 1))
         self.progress.setValue(current)
@@ -421,21 +467,27 @@ class MainWindow(QMainWindow):
         self._set_trip_summary(days, len(self.stages))
         if self.photo_list.count():
             self.photo_list.setCurrentRow(0)
+        if self._pending_trip is not None:
+            self._active_trip = self._pending_trip
+            self._pending_trip = None
+            self._restore_trip_state(self._active_trip.state)
+            self._update_trip_title()
 
     def on_scan_failed(self, message: str):
+        self._pending_trip = None
         self._finish_scan_ui()
         self._set_photo_controls_enabled(False)
         self._set_counter_status("counter.error")
         QMessageBox.critical(self, tr("dialog.error"), message)
 
     def on_scan_cancelled(self):
+        self._pending_trip = None
         self._finish_scan_ui()
         self._set_photo_controls_enabled(False)
         self._set_counter_status("counter.cancelled")
         self.trip_summary.setText(tr("trip.none"))
 
     def _finish_scan_ui(self):
-        self.open_btn.setEnabled(True)
         self.cancel_btn.setVisible(False)
         self.cancel_btn.setEnabled(True)
         self.progress.setVisible(False)
@@ -443,6 +495,8 @@ class MainWindow(QMainWindow):
 
     def _on_thread_finished(self):
         self._thread = None
+        self.open_btn.setEnabled(True)
+        self.trips_btn.setEnabled(True)
 
     def _set_photo_controls_enabled(self, enabled: bool):
         controls = (
@@ -455,6 +509,8 @@ class MainWindow(QMainWindow):
         )
         for control in controls:
             control.setEnabled(enabled)
+        self.save_trip_action.setEnabled(enabled)
+        self.export_album_btn.setEnabled(enabled and self._album_thread is None)
 
     def _set_counter_status(self, key: str, **values):
         self._counter_state = ("status", {"key": key, **values})
@@ -547,7 +603,13 @@ class MainWindow(QMainWindow):
         selected_stage = self.stage_filter.currentData()
         selected_gps = self.gps_filter.currentData()
 
+        self.update_toast.retranslate()
+
         self.open_btn.setText(tr("toolbar.open_folder"))
+        self.trips_btn.setText(tr("trips.menu"))
+        self.save_trip_action.setText(tr("trips.save"))
+        self.saved_trips_action.setText(tr("trips.title"))
+        self.export_album_btn.setText(tr("album.button"))
         self.cancel_btn.setText(tr("toolbar.cancel"))
         self.path_edit.setPlaceholderText(tr("toolbar.folder_placeholder"))
         self.search_edit.setPlaceholderText(tr("toolbar.search_placeholder"))
@@ -872,6 +934,12 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         self._update_preview()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._startup_update_scheduled:
+            self._startup_update_scheduled = True
+            self._startup_update_timer.start(0)
+
     def keyPressEvent(self, event: QKeyEvent):
         if isinstance(self.focusWidget(), QLineEdit):
             super().keyPressEvent(event)
@@ -888,6 +956,15 @@ class MainWindow(QMainWindow):
             super().keyPressEvent(event)
 
     def closeEvent(self, event: QCloseEvent):
+        if self._album_thread is not None:
+            if self._album_worker is not None:
+                self._album_worker.request_cancel()
+            self._close_after_export = True
+            event.ignore()
+            return
+        if not self._save_active_trip():
+            event.ignore()
+            return
         self.settings.setValue("window_geometry", self.saveGeometry())
         self.settings.setValue("main_splitter_v2", self.splitter.saveState())
         if self._worker is not None:
@@ -897,7 +974,201 @@ class MainWindow(QMainWindow):
             if not self._thread.wait(3000):
                 event.ignore()
                 return
+        self._startup_update_timer.stop()
+        self.update_checker.cancel()
+        self.update_toast.dismiss()
         super().closeEvent(event)
+
+    def check_for_updates(self):
+        if self.update_checker.busy:
+            return
+        self.update_checker.check()
+
+    def _on_update_result(self, result: UpdateResult):
+        if result.status == "available":
+            self.update_toast.present(result)
+
+    def _update_trip_title(self):
+        name = f" · {self._active_trip.name}" if self._active_trip else ""
+        self.setWindowTitle(f"{APP_NAME} {APP_VERSION}{name}")
+
+    def _trip_state(self) -> dict:
+        item = self.photo_list.currentItem()
+        selected = None
+        if item is not None and self._current_folder is not None:
+            path = self.photos[item.data(Qt.ItemDataRole.UserRole)].path.absolute()
+            selected = str(path.relative_to(self._current_folder))
+        return {
+            "search": self.search_edit.text(),
+            "day": self.day_filter.currentData(),
+            "stage": self.stage_filter.currentData(),
+            "gps": self.gps_filter.currentData(),
+            "route": self.route_check.isChecked(),
+            "heatmap": self.heat_check.isChecked(),
+            "selected_path": selected,
+            "timeline_view": self.timeline.session_view(),
+            "play_interval": self.play_speed.currentData(),
+        }
+
+    def _restore_trip_state(self, state: dict):
+        self.filter_timer.stop()
+        self.search_edit.blockSignals(True)
+        self.search_edit.setText(state.get("search", ""))
+        self.search_edit.blockSignals(False)
+        for combo, key in ((self.day_filter, "day"), (self.stage_filter, "stage"),
+                           (self.gps_filter, "gps"), (self.play_speed, "play_interval")):
+            combo.blockSignals(True)
+            combo.setCurrentIndex(max(0, combo.findData(state.get(key))))
+            combo.blockSignals(False)
+        self._update_playback_speed()
+        self.route_check.setChecked(state.get("route", True))
+        self.heat_check.setChecked(state.get("heatmap", False))
+        self.apply_filter()
+        relative_path = state.get("selected_path")
+        if relative_path and self._current_folder:
+            selected = (self._current_folder / relative_path).resolve()
+            for index in self.visible_indices:
+                if self.photos[index].path.resolve() == selected:
+                    self.select_original_index(index)
+                    break
+        self.timeline.restore_session_view(state.get("timeline_view"))
+
+    def _save_active_trip(self) -> bool:
+        if self._active_trip is None or self._worker is not None or not self.photos:
+            return True
+        try:
+            self._active_trip = self.trip_service.save(
+                self._active_trip.name, self._active_trip.folder,
+                self._trip_state(), self._active_trip.id,
+            )
+            return True
+        except Exception as exc:
+            QMessageBox.critical(self, tr("dialog.error"), str(exc))
+            return False
+
+    def save_trip_clicked(self):
+        if self._current_folder is None or not self.photos:
+            return
+        default_name = self._active_trip.name if self._active_trip else self._current_folder.name
+        name, accepted = QInputDialog.getText(self, tr("trips.save"), tr("trips.name"), text=default_name)
+        if not accepted or not name.strip():
+            return
+        try:
+            self._active_trip = self.trip_service.save(
+                name, self._current_folder, self._trip_state(),
+                self._active_trip.id if self._active_trip else None,
+            )
+            self._update_trip_title()
+            self.statusBar().showMessage(tr("trips.saved"), 7000)
+        except Exception as exc:
+            QMessageBox.critical(self, tr("dialog.error"), str(exc))
+
+    def open_saved_trips(self):
+        if not self._save_active_trip():
+            return
+        try:
+            dialog = SavedTripsDialog(self.trip_service, self)
+            accepted = dialog.exec() == QDialog.DialogCode.Accepted
+            # A renamed or removed active trip must not be recreated on autosave.
+            if self._active_trip:
+                self._active_trip = next((trip for trip in self.trip_service.list_trips()
+                                          if trip.id == self._active_trip.id), None)
+                self._update_trip_title()
+            if not accepted or dialog.selected_trip is None:
+                return
+            trip = dialog.selected_trip
+            if not trip.folder.is_dir():
+                QMessageBox.information(self, tr("trips.title"), tr("trips.missing_folder", folder=trip.folder))
+                folder = QFileDialog.getExistingDirectory(self, tr("dialog.select_folder"))
+                if not folder:
+                    return
+                trip = self.trip_service.save(trip.name, Path(folder), trip.state, trip.id)
+                if self._active_trip and self._active_trip.id == trip.id:
+                    self._active_trip = trip
+            self.load_folder(trip.folder, trip)
+        except Exception as exc:
+            QMessageBox.critical(self, tr("dialog.error"), str(exc))
+
+    def export_album_clicked(self):
+        photos = self._photos_for_export()
+        if not photos:
+            QMessageBox.information(self, tr("dialog.export"), tr("export.no_filtered_photos"))
+            return
+        if self._album_thread is not None:
+            return
+        title = self._active_trip.name if self._active_trip else self._current_folder.name if self._current_folder else "Album"
+        dialog = AlbumExportDialog(title, len(photos), self.settings.value("album_folder", str(Path.home()), type=str), self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        parent = Path(dialog.folder_edit.text())
+        self.settings.setValue("album_folder", str(parent))
+        destination = available_album_folder(parent, dialog.title_edit.text())
+        progress = QProgressDialog("", tr("toolbar.cancel"), 0, len(photos), self)
+        progress.setWindowTitle(tr("album.export_title"))
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setMinimumDuration(0)
+        self._album_progress = progress
+        thread = QThread(self)
+        worker = AlbumExportWorker(destination, dialog.title_edit.text().strip(), photos, get_language(), dialog.gps_check.isChecked())
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        progress.canceled.connect(self._cancel_album_export)
+        worker.progress.connect(self._on_album_progress)
+        worker.finished.connect(self._on_album_finished)
+        worker.failed.connect(self._on_album_failed)
+        worker.cancelled.connect(self._on_album_cancelled)
+        for signal in (worker.finished, worker.failed, worker.cancelled):
+            signal.connect(thread.quit, Qt.ConnectionType.DirectConnection)
+            signal.connect(worker.deleteLater)
+        thread.finished.connect(self._on_album_thread_finished)
+        thread.finished.connect(thread.deleteLater)
+        self._album_thread = thread
+        self._album_worker = worker
+        self.export_album_btn.setEnabled(False)
+        self._on_album_progress(0, len(photos))
+        thread.start()
+        progress.show()
+
+    def _cancel_album_export(self):
+        if self._album_worker:
+            self._album_worker.request_cancel()
+        if self._album_progress:
+            self._album_progress.setLabelText(tr("album.cancelling"))
+
+    def _on_album_progress(self, current: int, total: int):
+        if self._album_progress:
+            self._album_progress.setLabelText(tr("album.progress", current=current, total=total))
+            self._album_progress.setValue(current)
+
+    def _finish_album_ui(self):
+        self._album_worker = None
+        if self._album_progress:
+            self._album_progress.reset()
+            self._album_progress.deleteLater()
+            self._album_progress = None
+
+    def _on_album_finished(self, path: str):
+        self._finish_album_ui()
+        if not self._close_after_export and QMessageBox.question(
+            self, tr("dialog.export"), tr("album.success", path=path)
+        ) == QMessageBox.StandardButton.Yes:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def _on_album_failed(self, message: str):
+        self._finish_album_ui()
+        if not self._close_after_export:
+            QMessageBox.critical(self, tr("dialog.error"), message)
+
+    def _on_album_cancelled(self):
+        self._finish_album_ui()
+
+    def _on_album_thread_finished(self):
+        self._album_thread = None
+        self.export_album_btn.setEnabled(bool(self.photos) and self._worker is None)
+        if self._close_after_export:
+            QTimer.singleShot(0, self.close)
 
     def _photos_for_export(self) -> list[PhotoInfo]:
         return [self.photos[i] for i in self.visible_indices]

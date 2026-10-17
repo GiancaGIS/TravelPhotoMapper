@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "travel-photo-mapper"
+description = "Explore travel photos by place and time."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dynamic = ["version", "dependencies"]
+
+[project.gui-scripts]
+travel-photo-mapper = "travel_photo_mapper.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = false
+
+[tool.setuptools.package-data]
+travel_photo_mapper = ["assets/*.png", "assets/*.ico"]
+
+[tool.setuptools.dynamic]
+version = {attr = "travel_photo_mapper.app_info.APP_VERSION"}
+dependencies = {file = ["requirements.txt"]}

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
-from services.thumbnail_service import ensure_thumbnail
+from travel_photo_mapper.services.thumbnail_service import ensure_thumbnail
 
 
 class ThumbnailWorkerSignals(QObject):

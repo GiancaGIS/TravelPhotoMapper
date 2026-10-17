@@ -1,11 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
+project_root = Path(SPECPATH).parent
+source_root = project_root / "src"
+package_root = source_root / "travel_photo_mapper"
 
 a = Analysis(
-    ["../main.py"],
-    pathex=[".."],
+    [str(package_root / "main.py")],
+    pathex=[str(source_root)],
     binaries=[],
-    datas=[("../assets/travel_photo_mapper.png", "assets")],
+    datas=[(str(package_root / "assets" / "travel_photo_mapper.png"), "assets")],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -23,8 +28,8 @@ exe = EXE(
     a.datas,
     [],
     name="TravelPhotoMapper",
-    icon="../assets/travel_photo_mapper.ico",
-    version="version_info.txt",
+    icon=str(package_root / "assets" / "travel_photo_mapper.ico"),
+    version=str(project_root / "packaging" / "version_info.txt"),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

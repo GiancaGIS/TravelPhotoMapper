@@ -7,12 +7,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from xml.etree import ElementTree
 
-from app_info import APP_NAME, APP_VERSION
-from models.photo import PhotoInfo
-from services.cache_service import CacheService
-from services.exif_reader import _dms_to_decimal, _parse_datetime
-from services.export_service import export_geojson, export_gpx
-from services.trip_service import build_stages
+from travel_photo_mapper.app_info import APP_NAME, APP_VERSION
+from travel_photo_mapper.models.photo import PhotoInfo
+from travel_photo_mapper.services.cache_service import CacheService
+from travel_photo_mapper.services.exif_reader import _dms_to_decimal, _parse_datetime
+from travel_photo_mapper.services.export_service import export_geojson, export_gpx
+from travel_photo_mapper.services.trip_service import build_stages
 
 
 def photo(

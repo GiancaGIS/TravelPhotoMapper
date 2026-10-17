@@ -4,9 +4,9 @@ from pathlib import Path
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
-from models.photo import PhotoInfo
-from services.cache_service import CacheService
-from services.exif_reader import read_photo_metadata
+from travel_photo_mapper.models.photo import PhotoInfo
+from travel_photo_mapper.services.cache_service import CacheService
+from travel_photo_mapper.services.exif_reader import read_photo_metadata
 
 
 SUPPORTED_EXTENSIONS = {

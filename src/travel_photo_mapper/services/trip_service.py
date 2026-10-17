@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from math import radians, sin, cos, sqrt, atan2
 
-from i18n import tr, trn
-from models.photo import PhotoInfo
+from travel_photo_mapper.i18n import tr, trn
+from travel_photo_mapper.models.photo import PhotoInfo
 
 
 @dataclass(slots=True)

@@ -8,8 +8,8 @@ from typing import Any
 from PIL import Image, ExifTags
 from pillow_heif import register_heif_opener
 
-from i18n import tr
-from models.photo import PhotoInfo
+from travel_photo_mapper.i18n import tr
+from travel_photo_mapper.models.photo import PhotoInfo
 
 register_heif_opener()
 

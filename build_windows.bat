@@ -7,13 +7,23 @@ set "SKIP_INSTALLER=0"
 
 :parse_arguments
 if "%~1"=="" goto arguments_done
-if /I "%~1"=="-SkipDependencies" set "SKIP_DEPENDENCIES=1" & shift & goto parse_arguments
-if /I "%~1"=="--skip-dependencies" set "SKIP_DEPENDENCIES=1" & shift & goto parse_arguments
-if /I "%~1"=="-SkipInstaller" set "SKIP_INSTALLER=1" & shift & goto parse_arguments
-if /I "%~1"=="--skip-installer" set "SKIP_INSTALLER=1" & shift & goto parse_arguments
+if /I "%~1"=="-SkipDependencies" goto skip_dependencies
+if /I "%~1"=="--skip-dependencies" goto skip_dependencies
+if /I "%~1"=="-SkipInstaller" goto skip_installer
+if /I "%~1"=="--skip-installer" goto skip_installer
 echo Argomento non riconosciuto: %~1
 echo Uso: build_windows.bat [-SkipDependencies] [-SkipInstaller]
 exit /b 2
+
+:skip_dependencies
+set "SKIP_DEPENDENCIES=1"
+shift
+goto parse_arguments
+
+:skip_installer
+set "SKIP_INSTALLER=1"
+shift
+goto parse_arguments
 
 :arguments_done
 set "PYTHON=%CD%\.venv\Scripts\python.exe"
@@ -23,7 +33,7 @@ if not exist "%PYTHON%" (
 )
 
 if "%SKIP_DEPENDENCIES%"=="0" (
-    "%PYTHON%" -m pip install -r requirements.txt -r requirements-build.txt
+    "%PYTHON%" -m pip install -e . -r requirements-build.txt
     if errorlevel 1 (
         echo Installazione delle dipendenze non riuscita.
         exit /b 1
@@ -58,5 +68,5 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Setup creato in dist\installer\TravelPhotoMapper-Setup-1.0.0.exe
+echo Setup creato in dist\installer\TravelPhotoMapper-Setup-1.1.0.exe
 exit /b 0

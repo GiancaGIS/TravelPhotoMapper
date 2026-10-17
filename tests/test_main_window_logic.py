@@ -3,9 +3,9 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from models.photo import PhotoInfo
-from ui.main_window import MainWindow
-from ui.map_widget import HTML, MapWidget
+from travel_photo_mapper.models.photo import PhotoInfo
+from travel_photo_mapper.ui.main_window import MainWindow
+from travel_photo_mapper.ui.map_widget import HTML, MapWidget
 
 
 class ExportSelectionTests(unittest.TestCase):

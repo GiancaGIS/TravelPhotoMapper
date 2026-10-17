@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from i18n import TRANSLATIONS, detect_system_language, get_language, set_language, tr, trn
+from travel_photo_mapper.i18n import TRANSLATIONS, detect_system_language, get_language, set_language, tr, trn
 
 
 class TranslationTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class TranslationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             set_language("fr")
 
-    @patch("i18n.locale.getlocale", return_value=("Italian_Italy", "1252"))
+    @patch("travel_photo_mapper.i18n.locale.getlocale", return_value=("Italian_Italy", "1252"))
     def test_detects_windows_italian_locale(self, _getlocale):
         self.assertEqual(detect_system_language(), "it")
 

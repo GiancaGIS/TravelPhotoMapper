@@ -6,8 +6,8 @@ from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 from PyQt6.QtWebChannel import QWebChannel
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from models.photo import PhotoInfo
-from services.thumbnail_service import thumbnail_data_uri
+from travel_photo_mapper.models.photo import PhotoInfo
+from travel_photo_mapper.services.thumbnail_service import thumbnail_data_uri
 
 
 HTML = r"""

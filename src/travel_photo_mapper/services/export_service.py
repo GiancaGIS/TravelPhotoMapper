@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, ElementTree
 
-from app_info import APP_NAME, APP_VERSION
-from i18n import tr
-from models.photo import PhotoInfo
+from travel_photo_mapper.app_info import APP_NAME, APP_VERSION
+from travel_photo_mapper.i18n import tr
+from travel_photo_mapper.models.photo import PhotoInfo
 
 
 def export_geojson(path: Path, photos: list[PhotoInfo]) -> None:

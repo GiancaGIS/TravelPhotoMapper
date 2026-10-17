@@ -10,14 +10,14 @@ from PIL import Image
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QApplication, QListView, QWidget
 
-from models.photo import PhotoInfo
-from services.photo_scanner import PhotoScannerWorker
-from ui.main_window import MainWindow
-from ui.photo_viewer import load_original_image
-from ui.timeline_widget import TimelineWidget
+from travel_photo_mapper.models.photo import PhotoInfo
+from travel_photo_mapper.services.photo_scanner import PhotoScannerWorker
+from travel_photo_mapper.ui.main_window import MainWindow
+from travel_photo_mapper.ui.photo_viewer import load_original_image
+from travel_photo_mapper.ui.timeline_widget import TimelineWidget
 
 
-APP = QApplication.instance() or QApplication([])
+APP = QApplication.instance() or QApplication(["TravelPhotoMapper-tests"])
 
 
 class DummyMapWidget(QWidget):
@@ -40,7 +40,7 @@ class DummyMapWidget(QWidget):
 
 
 class MainWindowLayoutTests(unittest.TestCase):
-    @patch("ui.main_window.MapWidget", DummyMapWidget)
+    @patch("travel_photo_mapper.ui.main_window.MapWidget", DummyMapWidget)
     def test_gallery_uses_vertical_photo_rows(self):
         window = MainWindow()
 
@@ -54,7 +54,7 @@ class MainWindowLayoutTests(unittest.TestCase):
 
         window.close()
 
-    @patch("ui.main_window.MapWidget", DummyMapWidget)
+    @patch("travel_photo_mapper.ui.main_window.MapWidget", DummyMapWidget)
     def test_gallery_shows_filename_date_and_time_on_separate_lines(self):
         window = MainWindow()
         photo = PhotoInfo(

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QStandardPaths
 
-from models.photo import PhotoInfo
+from travel_photo_mapper.models.photo import PhotoInfo
 
 
 class CacheService:

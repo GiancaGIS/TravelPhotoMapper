@@ -1,5 +1,5 @@
 #define MyAppName "Travel Photo Mapper"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "GiancaGIS"
 #define MyAppExeName "TravelPhotoMapper.exe"
 
@@ -14,7 +14,7 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\dist\installer
 OutputBaseFilename=TravelPhotoMapper-Setup-{#MyAppVersion}
-SetupIconFile=..\assets\travel_photo_mapper.ico
+SetupIconFile=..\src\travel_photo_mapper\assets\travel_photo_mapper.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

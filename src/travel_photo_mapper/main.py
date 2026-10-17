@@ -5,8 +5,8 @@ from pathlib import Path
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
-from app_info import APP_NAME, APP_VERSION, ORGANIZATION_NAME
-from ui.main_window import MainWindow
+from travel_photo_mapper.app_info import APP_NAME, APP_VERSION, ORGANIZATION_NAME
+from travel_photo_mapper.ui.main_window import MainWindow
 
 
 def main():

@@ -19,9 +19,9 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from i18n import tr
-from models.photo import PhotoInfo
-from services.thumbnail_service import load_pixmap
+from travel_photo_mapper.i18n import tr
+from travel_photo_mapper.models.photo import PhotoInfo
+from travel_photo_mapper.services.thumbnail_service import load_pixmap
 
 register_heif_opener()
 

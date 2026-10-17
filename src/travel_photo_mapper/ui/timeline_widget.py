@@ -6,8 +6,8 @@ from PyQt6.QtCore import QPoint, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QFontMetrics, QPainter, QPen
 from PyQt6.QtWidgets import QToolTip, QWidget
 
-from i18n import tr
-from models.photo import PhotoInfo
+from travel_photo_mapper.i18n import tr
+from travel_photo_mapper.models.photo import PhotoInfo
 
 
 class TimelineWidget(QWidget):
@@ -58,6 +58,15 @@ class TimelineWidget(QWidget):
         self._view_start = self._full_start
         self._view_end = self._full_end
         self.update()
+
+    def session_view(self) -> list[float] | None:
+        return [self._view_start, self._view_end] if self.indices else None
+
+    def restore_session_view(self, view):
+        if (self.indices and isinstance(view, list) and len(view) == 2
+                and all(isinstance(value, (float, int)) for value in view)
+                and self._full_start <= view[0] < view[1] <= self._full_end):
+            self._set_view(*view)
 
     def zoom_in(self):
         self._zoom_at(0.5, 0.65)
